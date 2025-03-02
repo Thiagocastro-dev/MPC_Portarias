@@ -1,0 +1,71 @@
+version: '3.8'
+
+services:
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "${PORT:-3000}:80"
+    environment:
+      - NODE_ENV=production
+      - VITE_COUCHDB_URL=/db
+      - HOST=${HOST:-0.0.0.0}
+      - PORT=${PORT:-3000}
+    depends_on:
+      - python-updater
+    networks:
+      - app-network
+
+  couchdb:
+    build:
+      context: .
+      dockerfile: Dockerfile.couchdb
+    ports:
+      - "5984:5984"
+    environment:
+      - COUCHDB_USER=${COUCHDB_USER:-admin}
+      - COUCHDB_PASSWORD=${COUCHDB_PASSWORD:-mpc123}
+      - COUCHDB_SECRET=${COUCHDB_SECRET:-development_secret}
+      - NODENAME=couchdb.local
+    volumes:
+      - couchdb_data:/opt/couchdb/data
+      - couchdb_config:/opt/couchdb/etc/local.d
+    networks:
+      - app-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5984"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  python-updater:
+    build:
+      context: ./src/python
+      dockerfile: Dockerfile.python
+    volumes:
+      - python_data:/app/pdfs
+      - python_texts:/app/extracted_texts
+    environment:
+      - COUCHDB_HOST=couchdb
+      - COUCHDB_PORT=5984
+      - COUCHDB_USER=admin
+      - COUCHDB_PASSWORD=mpc123
+    depends_on:
+      couchdb:
+        condition: service_healthy
+    networks:
+      - app-network
+    restart: "no"
+    command: >
+      sh -c "python main.py && exit 0"
+
+networks:
+  app-network:
+    driver: bridge
+
+volumes:
+  couchdb_data:
+  couchdb_config:
+  python_data:
+  python_texts:
